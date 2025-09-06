@@ -271,3 +271,95 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 });
+
+
+
+// Función para cargar secciones provinciales
+async function cargarSeccionesProvinciales(distritoId) {
+  const url = `/api/filtros/secciones_provinciales?distritoId=${distritoId}`;
+  const response = await fetch(url);
+  const secciones = await response.json();
+  const select = document.getElementById("seccionProvincialId");
+  select.innerHTML = "";
+  secciones.forEach(sp => {
+    const option = document.createElement("option");
+    option.value = sp.id;
+    option.textContent = sp.nombre;
+    select.appendChild(option);
+  });
+}
+
+// Función para cargar secciones/departamentos/comunas
+async function cargarSecciones(seccionProvincialId) {
+  const url = `/api/filtros/secciones?seccionProvincialId=${seccionProvincialId}`;
+  const response = await fetch(url);
+  const secciones = await response.json();
+  const select = document.getElementById("seccionId");
+  select.innerHTML = "";
+  secciones.forEach(s => {
+    const option = document.createElement("option");
+    option.value = s.id;
+    option.textContent = s.nombre;
+    select.appendChild(option);
+  });
+}
+
+// Función para cargar circuitos
+async function cargarCircuitos(seccionId) {
+  const url = `/api/filtros/circuitos?seccionId=${seccionId}`;
+  const response = await fetch(url);
+  const circuitos = await response.json();
+  const select = document.getElementById("circuitoId");
+  select.innerHTML = "";
+  circuitos.forEach(c => {
+    const option = document.createElement("option");
+    option.value = c.id;
+    option.textContent = c.nombre;
+    select.appendChild(option);
+  });
+}
+
+// Función para cargar mesas
+async function cargarMesas(circuitoId) {
+  const url = `/api/filtros/mesas?circuitoId=${circuitoId}`;
+  const response = await fetch(url);
+  const mesas = await response.json();
+  const select = document.getElementById("mesaId");
+  select.innerHTML = "";
+  mesas.forEach(m => {
+    const option = document.createElement("option");
+    option.value = m.id;
+    option.textContent = m.nombre;
+    select.appendChild(option);
+  });
+}
+
+// Ejemplo de cómo llamar a estas funciones cuando se selecciona un distrito
+document.getElementById("distritoId").addEventListener("change", async (e) => {
+  const distritoId = e.target.value;
+  if (distritoId) {
+    await cargarSeccionesProvinciales(distritoId);
+  }
+});
+
+// Similar para los demás selectores
+document.getElementById("seccionProvincialId").addEventListener("change", async (e) => {
+  const seccionProvincialId = e.target.value;
+  if (seccionProvincialId) {
+    await cargarSecciones(seccionProvincialId);
+  }
+});
+
+document.getElementById("seccionId").addEventListener("change", async (e) => {
+  const seccionId = e.target.value;
+  if (seccionId) {
+    await cargarCircuitos(seccionId);
+  }
+});
+
+document.getElementById("circuitoId").addEventListener("change", async (e) => {
+  const circuitoId = e.target.value;
+  if (circuitoId) {
+    await cargarMesas(circuitoId);
+  }
+});

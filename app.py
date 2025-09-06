@@ -4,6 +4,7 @@ from flask import Flask, render_template, request, jsonify, send_file
 import requests
 import pandas as pd
 
+
 # ---------------- Configuración ----------------
 load_dotenv()
 
@@ -221,3 +222,69 @@ def diag():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")))
+
+
+
+
+
+
+
+# Ejemplo de ruta para obtener secciones provinciales
+@app.route('/api/filtros/secciones_provinciales')
+def get_secciones_provinciales():
+    distrito_id = request.args.get('distritoId')
+    if not distrito_id:
+        return jsonify({"error": "Falta distritoId"}), 400
+
+    # Consulta a la API de elecciones para obtener las secciones provinciales
+    # Ejemplo: https://apis.datos.gob.ar/georef/api/secciones_provinciales?distritoId=X
+    url = f"https://apis.datos.gob.ar/georef/api/secciones_provinciales?distritoId={distrito_id}"
+    response = requests.get(url)
+
+    if response.ok:
+        return jsonify(response.json())
+    else:
+        return jsonify({"error": "No se pudieron obtener las secciones provinciales"}), 500
+
+# Rutas similares para secciones, circuitos y mesas
+@app.route('/api/filtros/secciones')
+def get_secciones():
+    seccion_provincial_id = request.args.get('seccionProvincialId')
+    if not seccion_provincial_id:
+        return jsonify({"error": "Falta seccionProvincialId"}), 400
+
+    url = f"https://apis.datos.gob.ar/georef/api/secciones?seccionProvincialId={seccion_provincial_id}"
+    response = requests.get(url)
+
+    if response.ok:
+        return jsonify(response.json())
+    else:
+        return jsonify({"error": "No se pudieron obtener las secciones"}), 500
+
+@app.route('/api/filtros/circuitos')
+def get_circuitos():
+    seccion_id = request.args.get('seccionId')
+    if not seccion_id:
+        return jsonify({"error": "Falta seccionId"}), 400
+
+    url = f"https://apis.datos.gob.ar/georef/api/circuitos?seccionId={seccion_id}"
+    response = requests.get(url)
+
+    if response.ok:
+        return jsonify(response.json())
+    else:
+        return jsonify({"error": "No se pudieron obtener los circuitos"}), 500
+
+@app.route('/api/filtros/mesas')
+def get_mesas():
+    circuito_id = request.args.get('circuitoId')
+    if not circuito_id:
+        return jsonify({"error": "Falta circuitoId"}), 400
+
+    url = f"https://apis.datos.gob.ar/georef/api/mesas?circuitoId={circuito_id}"
+    response = requests.get(url)
+
+    if response.ok:
+        return jsonify(response.json())
+    else:
+        return jsonify({"error": "No se pudieron obtener las mesas"}), 500
