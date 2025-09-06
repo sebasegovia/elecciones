@@ -57,13 +57,18 @@ def main():
     try:
         with open(tmp.name, "w", encoding="utf-8") as f:
             json.dump(gj, f, ensure_ascii=False)
-        shutil.move(tmp.name, OUT)
+        try:
+            shutil.move(tmp.name, OUT)
+        except PermissionError as e:
+            print(f"[ERROR] No se pudo mover el archivo: {e}. Intenta cerrar programas que usen 'provincias.geojson'.", file=sys.stderr)
+            sys.exit(4)
     finally:
-        try: os.unlink(tmp.name)
-        except: pass
+        try:
+            os.unlink(tmp.name)
+        except Exception as e:
+            print(f"[WARNING] No se pudo eliminar el archivo temporal: {e}", file=sys.stderr)
 
     print("OK →", OUT)
 
 if __name__ == "__main__":
     main()
-
