@@ -1,0 +1,58 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+  h1 { font-size: 18pt; margin: 0 0 8px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  th, td { border: 1px solid #ccc; padding: 6px; font-size: 10pt; }
+  th { background: #f2f2f2; }
+  .small { font-size: 9pt; color: #666; }
+</style>
+
+<h1>Resultados electorales</h1>
+<div class="small">
+  Fecha totalización: {{ fecha }}
+  <br> Query: {{ query }}
+</div>
+
+<h2 style="font-size:14pt;margin-top:12px;">Positivos</h2>
+<table>
+  <thead>
+    <tr>
+      <th>idAgrupación</th>
+      <th>Telegrama</th>
+      <th>Nombre</th>
+      <th>Votos</th>
+      <th>%</th>
+      <th>Logo</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for _, r in df_pos.iterrows() %}
+    <tr>
+      <td>{{ r.idAgrupacion }}</td>
+      <td>{{ r.idAgrupacionTelegrama }}</td>
+      <td>{{ r.nombreAgrupacion }}</td>
+      <td style="text-align:right">{{ r.votos }}</td>
+      <td style="text-align:right">{{ ("%.2f"|format(r.votosPorcentaje or 0)) }}</td>
+      <td>{{ r.urlLogo }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if not df_otros.empty %}
+<h2 style="font-size:14pt;margin-top:12px;">Otros</h2>
+<table>
+  <thead><tr>
+    {% for c in df_otros.columns %}<th>{{c}}</th>{% endfor %}
+  </tr></thead>
+  <tbody>
+    {% for _, r in df_otros.iterrows() %}
+    <tr>
+      {% for c in df_otros.columns %}<td>{{r[c]}}</td>{% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
