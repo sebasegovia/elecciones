@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: elecciones
+    env: python
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn wsgi:app --workers=2 --threads=4 --timeout=120
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: API_BASE
+        value: https://resultados.mininterior.gob.ar/api
+      # Si terminás usando un proxy propio, cambiá esta URL por la del proxy.
+      - key: BEARER_TOKEN
+        value: "" # Dejalo vacío salvo que tengas uno de la colección Insomnia

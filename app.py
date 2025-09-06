@@ -1,39 +1,40 @@
-import io
-import os
-import datetime as dt
-import pandas as pd
-import requests
-
-from flask import Flask, render_template, request, jsonify, send_file
 from dotenv import load_dotenv
+import os, io, json, datetime as dt
+from flask import Flask, render_template, request, jsonify, send_file
+import requests
+import pandas as pd
 
-# -------------------------------------------------------------------
-# Motor de PDF: preferimos xhtml2pdf (sin deps nativas en Windows).
-# Si existe WeasyPrint y está correctamente instalado con sus libs,
-# lo usamos como fallback (mejor soporte CSS).
-# -------------------------------------------------------------------
+# ---------------- Configuración ----------------
+load_dotenv()
+
+API_BASE = os.getenv("API_BASE", "https://resultados.mininterior.gob.ar/api")
+BEARER_TOKEN = os.getenv("BEARER_TOKEN", "").strip()
+
+DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; elecciones-app/1.0)",
+    "Accept": "application/json",
+}
+if BEARER_TOKEN:
+    DEFAULT_HEADERS["Authorization"] = f"Bearer {BEARER_TOKEN}"
+
+# PDF engine
 PDF_ENGINE = None
 try:
-    from xhtml2pdf import pisa  # noqa: F401
+    from xhtml2pdf import pisa  # noqa
     PDF_ENGINE = "xhtml2pdf"
 except Exception:
     try:
-        from weasyprint import HTML  # noqa: F401
+        from weasyprint import HTML  # noqa
         PDF_ENGINE = "weasyprint"
     except Exception:
         PDF_ENGINE = None
 
-# -------------------------------------------------------------------
-# Configuración
-# -------------------------------------------------------------------
-load_dotenv()
-API_BASE = os.getenv("API_BASE", "https://resultados.mininterior.gob.ar/api")
-
+# ---------------- App ----------------
 app = Flask(__name__)
 
-# Catálogos básicos (pueden reemplazarse por listas dinámicas si conseguís endpoints)
 TIPOS_RECUENTO = [
     {"value": "1", "label": "Provisorio (1)"},
+    {"value": "2", "label": "Definitivo (2)"},
 ]
 TIPOS_ELECCION = [
     {"value": "1", "label": "PASO (1)"},
@@ -47,257 +48,176 @@ CATEGORIAS = [
     {"value": 8, "label": "Parlasur - Distrito Nacional"},
     {"value": 9, "label": "Parlasur - Distrito Regional"},
 ]
-
-# Nuevo: distritos (IDs oficiales)
 DISTRITOS = [
-    {"value": "1", "label": "CABA"},
-    {"value": "2", "label": "Buenos Aires"},
-    {"value": "3", "label": "Catamarca"},
-    {"value": "4", "label": "Córdoba"},
-    {"value": "5", "label": "Corrientes"},
-    {"value": "6", "label": "Chaco"},
-    {"value": "7", "label": "Chubut"},
-    {"value": "8", "label": "Entre Ríos"},
-    {"value": "9", "label": "Formosa"},
-    {"value": "10", "label": "Jujuy"},
-    {"value": "11", "label": "La Pampa"},
-    {"value": "12", "label": "La Rioja"},
-    {"value": "13", "label": "Mendoza"},
-    {"value": "14", "label": "Misiones"},
-    {"value": "15", "label": "Neuquén"},
-    {"value": "16", "label": "Río Negro"},
-    {"value": "17", "label": "Salta"},
-    {"value": "18", "label": "San Juan"},
-    {"value": "19", "label": "San Luis"},
-    {"value": "20", "label": "Santa Cruz"},
-    {"value": "21", "label": "Santa Fe"},
-    {"value": "22", "label": "Santiago del Estero"},
-    {"value": "23", "label": "Tucumán"},
-    {"value": "24", "label": "Tierra del Fuego A.I.A.S."},
+    {"value": "02", "label": "CABA"},
+    {"value": "06", "label": "Buenos Aires"},
+    {"value": "10", "label": "Catamarca"},
+    {"value": "14", "label": "Córdoba"},
+    {"value": "18", "label": "Corrientes"},
+    {"value": "22", "label": "Chaco"},
+    {"value": "26", "label": "Chubut"},
+    {"value": "30", "label": "Entre Ríos"},
+    {"value": "34", "label": "Formosa"},
+    {"value": "38", "label": "Jujuy"},
+    {"value": "42", "label": "La Pampa"},
+    {"value": "46", "label": "La Rioja"},
+    {"value": "50", "label": "Mendoza"},
+    {"value": "54", "label": "Misiones"},
+    {"value": "58", "label": "Neuquén"},
+    {"value": "62", "label": "Río Negro"},
+    {"value": "66", "label": "Salta"},
+    {"value": "70", "label": "San Juan"},
+    {"value": "74", "label": "San Luis"},
+    {"value": "78", "label": "Santa Cruz"},
+    {"value": "82", "label": "Santa Fe"},
+    {"value": "86", "label": "Santiago del Estero"},
+    {"value": "90", "label": "Tucumán"},
+    {"value": "94", "label": "Tierra del Fuego"},
 ]
-
 ANIOS = [str(y) for y in range(2011, dt.datetime.now().year + 1)]
 
 
-# -------------------------------------------------------------------
-# Home
-# -------------------------------------------------------------------
+# ---------------- Rutas ----------------
 @app.route("/")
 def index():
     return render_template(
-    "index.html",
-    tipos_recuento=TIPOS_RECUENTO,
-    tipos_eleccion=TIPOS_ELECCION,
-    categorias=CATEGORIAS,
-    anios=ANIOS,
-    distritos=DISTRITOS,   # <-- nuevo
-)
+        "index.html",
+        tipos_recuento=TIPOS_RECUENTO,
+        tipos_eleccion=TIPOS_ELECCION,
+        categorias=CATEGORIAS,
+        anios=ANIOS,
+        distritos=DISTRITOS,
+    )
 
 
-# -------------------------------------------------------------------
-# Proxy hacia la API oficial (evita CORS y permite validar params)
-# -------------------------------------------------------------------
 @app.route("/api/resultados")
 def api_resultados():
-    params = {
-        "anioEleccion": request.args.get("anioEleccion"),
-        "tipoRecuento": request.args.get("tipoRecuento"),
-        "tipoEleccion": request.args.get("tipoEleccion"),
-        "categoriaId": request.args.get("categoriaId"),
-        "distritoId": request.args.get("distritoId"),
-        "seccionProvincialId": request.args.get("seccionProvincialId"),
-        "seccionId": request.args.get("seccionId"),
-        "circuitoId": request.args.get("circuitoId"),
-        "mesaId": request.args.get("mesaId"),
-    }
-    # Limpia vacíos
-    params = {k: v for k, v in params.items() if v not in (None, "", "null")}
-
-    # Validación mínima requerida por el swagger
+    params = {k: v for k, v in request.args.items() if v not in (None, "", "null")}
     if "categoriaId" not in params:
         return jsonify({"error": "categoriaId es requerido"}), 400
 
     try:
-        r = requests.get(f"{API_BASE}/resultados/getResultados", params=params, timeout=20)
+        r = requests.get(f"{API_BASE}/resultados/getResultados",
+                         params=params,
+                         headers=DEFAULT_HEADERS,
+                         timeout=20)
         r.raise_for_status()
     except requests.RequestException as e:
         return jsonify({"error": f"Fallo consultando API: {e}"}), 502
 
-    data = r.json()
-    return jsonify({"query": params, "data": data})
+    return jsonify({"query": params, "data": r.json()})
 
 
-
-
-# -------------------------------------------------------------------
-# Batch por distrito para mapa (coroplético nacional por provincia)
-# -------------------------------------------------------------------
 @app.route("/api/mapa/distritos")
 def api_mapa_distritos():
-    # Reutilizamos los mismos parámetros que ya usás:
-    base_params = {
-        "anioEleccion": request.args.get("anioEleccion"),
-        "tipoRecuento": request.args.get("tipoRecuento"),
-        "tipoEleccion": request.args.get("tipoEleccion"),
-        "categoriaId": request.args.get("categoriaId"),
-    }
-    # Limpia vacíos
-    base_params = {k: v for k, v in base_params.items() if v not in (None, "", "null")}
+    base_params = {k: v for k, v in request.args.items() if v not in (None, "", "null")}
     if "categoriaId" not in base_params:
         return jsonify({"error": "categoriaId es requerido"}), 400
 
-    # Si te pasan un distritoId, podrías hacer drill-down a secciones (extensión futura).
-    # Por ahora, si viene distritoId lo ignoramos para mantener un coroplético nacional.
-    # (Podés quitar este 'pop' y cambiar el flujo si querés otro comportamiento.)
-    base_params.pop("distritoId", None)
-
     out = []
-    agrup_index = {}  # idAgrupacion -> {id, nombre, urlLogo}
+    agrup_index = {}
     for d in (x["value"] for x in DISTRITOS):
         params = dict(base_params)
         params["distritoId"] = str(d)
         try:
-            r = requests.get(f"{API_BASE}/resultados/getResultados", params=params, timeout=20)
+            r = requests.get(f"{API_BASE}/resultados/getResultados",
+                             params=params,
+                             headers=DEFAULT_HEADERS,
+                             timeout=20)
             r.raise_for_status()
-        except requests.RequestException as e:
-            # Si falla uno, seguimos, pero marcamos error vacío para ese distrito
-            out.append({
-                "distritoId": str(d),
-                "ok": False,
-                "error": str(e),
-                "valoresTotalizadosPositivos": []
-            })
-            continue
+            data = r.json() or {}
+            positivos = data.get("valoresTotalizadosPositivos") or []
+            for p in positivos:
+                aid = p.get("idAgrupacion")
+                if aid and aid not in agrup_index:
+                    agrup_index[aid] = {
+                        "idAgrupacion": aid,
+                        "nombreAgrupacion": p.get("nombreAgrupacion"),
+                        "urlLogo": p.get("urlLogo"),
+                    }
+            out.append({"distritoId": d, "ok": True,
+                        "valoresTotalizadosPositivos": positivos})
+        except Exception as e:
+            out.append({"distritoId": d, "ok": False, "error": str(e),
+                        "valoresTotalizadosPositivos": []})
 
-        data = r.json() or {}
-        positivos = data.get("valoresTotalizadosPositivos") or []
-
-        # Indexamos logos/nombres una sola vez (para el selector)
-        for p in positivos:
-            aid = p.get("idAgrupacion")
-            if aid is not None and aid not in agrup_index:
-                agrup_index[aid] = {
-                    "idAgrupacion": aid,
-                    "nombreAgrupacion": p.get("nombreAgrupacion"),
-                    "urlLogo": p.get("urlLogo")
-                }
-
-        out.append({
-            "distritoId": str(d),
-            "ok": True,
-            "valoresTotalizadosPositivos": positivos
-        })
-
-    agrupaciones = list(agrup_index.values())
-    return jsonify({"series": out, "agrupaciones": agrupaciones})
+    return jsonify({"series": out, "agrupaciones": list(agrup_index.values())})
 
 
-
-
-
-# -------------------------------------------------------------------
-# Normalización para exportar (DataFrames)
-# -------------------------------------------------------------------
 def _armar_dataframes(data_json):
-    """
-    Convierte la respuesta a dos DataFrames:
-    - df_positivos: valores por agrupación (id, nombre, votos, %)
-    - df_otros: blancos/nulos/impugnados/etc. si vienen
-    """
     val = data_json.get("valoresTotalizadosPositivos") or []
     otros = data_json.get("valoresTotalizadosOtros") or []
-
-    df_positivos = pd.DataFrame([
-        {
-            "idAgrupacion": x.get("idAgrupacion"),
-            "idAgrupacionTelegrama": x.get("idAgrupacionTelegrama"),
-            "nombreAgrupacion": x.get("nombreAgrupacion"),
-            "votos": x.get("votos"),
-            "votosPorcentaje": x.get("votosPorcentaje"),
-            "urlLogo": x.get("urlLogo"),
-        }
-        for x in val
-    ])
-
+    df_positivos = pd.DataFrame(val)
     df_otros = pd.DataFrame(otros)
     return df_positivos, df_otros
 
 
-# -------------------------------------------------------------------
-# Exportar a Excel (xlsx)
-# -------------------------------------------------------------------
 @app.route("/export/excel")
 def export_excel():
-    # Repetimos la consulta para exportar exactamente lo que se ve
     qs = request.query_string.decode()
     prox = requests.get(request.host_url.rstrip("/") + "/api/resultados?" + qs, timeout=30)
     prox.raise_for_status()
-    payload = prox.json()
-    data = payload.get("data", {})
-
+    data = prox.json().get("data", {})
     df_pos, df_otros = _armar_dataframes(data)
 
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+    out = io.BytesIO()
+    with pd.ExcelWriter(out, engine="openpyxl") as writer:
         df_pos.to_excel(writer, index=False, sheet_name="Positivos")
         if not df_otros.empty:
             df_otros.to_excel(writer, index=False, sheet_name="Otros")
 
-    output.seek(0)
-    filename = f"resultados_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-    return send_file(
-        output,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        as_attachment=True,
-        download_name=filename
-    )
+    out.seek(0)
+    return send_file(out,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                     as_attachment=True,
+                     download_name="resultados.xlsx")
 
 
-# -------------------------------------------------------------------
-# Exportar a PDF (xhtml2pdf por defecto; WeasyPrint si está disponible)
-# -------------------------------------------------------------------
 @app.route("/export/pdf")
 def export_pdf():
     qs = request.query_string.decode()
     prox = requests.get(request.host_url.rstrip("/") + "/api/resultados?" + qs, timeout=30)
     prox.raise_for_status()
-    payload = prox.json()
-    data = payload.get("data", {})
-
+    data = prox.json().get("data", {})
     df_pos, df_otros = _armar_dataframes(data)
 
-    html = render_template(
-        "pdf.html",
-        fecha=data.get("fechaTotalizacion"),
-        estado=data.get("estadoRecuento"),
-        df_pos=df_pos.fillna(""),
-        df_otros=df_otros.fillna(""),
-        query=payload.get("query", {})
-    )
+    html = render_template("pdf.html",
+                           fecha=data.get("fechaTotalizacion"),
+                           estado=data.get("estadoRecuento"),
+                           df_pos=df_pos.fillna(""),
+                           df_otros=df_otros.fillna(""),
+                           query=data)
 
     if PDF_ENGINE == "xhtml2pdf":
-        # Generar PDF con xhtml2pdf (sin dependencias nativas)
         pdf_io = io.BytesIO()
-        result = pisa.CreatePDF(html, dest=pdf_io)  # type: ignore[name-defined]
-        if result.err:
-            return f"Error generando PDF (xhtml2pdf): {result.err}", 500
+        pisa.CreatePDF(html, dest=pdf_io)  # type: ignore
         pdf_io.seek(0)
     elif PDF_ENGINE == "weasyprint":
-        # Generar PDF con WeasyPrint si está todo instalado
-        from weasyprint import HTML  # import local para evitar errores de import global
         pdf_io = io.BytesIO()
         HTML(string=html, base_url=request.host_url).write_pdf(pdf_io)
         pdf_io.seek(0)
     else:
-        return "No hay motor de PDF disponible. Instala xhtml2pdf o configura WeasyPrint con sus dependencias.", 500
+        return "No hay motor de PDF disponible", 500
 
-    filename = f"resultados_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-    return send_file(pdf_io, mimetype="application/pdf", as_attachment=True, download_name=filename)
+    return send_file(pdf_io, mimetype="application/pdf",
+                     as_attachment=True,
+                     download_name="resultados.pdf")
 
 
-# -------------------------------------------------------------------
-# Entry point local
-# -------------------------------------------------------------------
+@app.route("/ping")
+def ping():
+    return jsonify({"pong": True})
+
+
+@app.route("/__diag")
+def diag():
+    return jsonify({
+        "api_base": API_BASE,
+        "bearer_set": bool(BEARER_TOKEN),
+        "cwd": os.getcwd(),
+        "python": os.sys.version,
+    })
+
+
 if __name__ == "__main__":
-    # Modo desarrollo
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")))
