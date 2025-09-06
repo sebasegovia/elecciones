@@ -1,7 +1,12 @@
 Flask==3.0.3
-gunicorn==21.2.0
+gunicorn==22.0.0
 python-dotenv==1.0.1
 requests==2.32.3
 pandas==2.2.2
 openpyxl==3.1.5
+
+# Opcional PDF (tu app lo maneja como opcional; si no lo necesitás, podés comentar todo esto)
 xhtml2pdf==0.2.14
+svglib==1.5.1
+reportlab==4.0.9
+Pillow==10.3.0
